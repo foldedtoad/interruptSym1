@@ -45,8 +45,8 @@ VIA_PCR      = VIA_BASE + $0C ; Peripheral Control Register
 VIA_IFR      = VIA_BASE + $0D ; Interrupt Flag Register
 VIA_IER      = VIA_BASE + $0E ; Interrupt Enable Register
 
-PA0_MASK_SET = %00000001      ; Mask for Port A Pin 0 (set)
-PA0_MASK_CLR = %11111110      ; Mask for Port A Pin 0 (clear)
+PA6_MASK_SET = %01000000      ; Mask for Port A Pin 6 (set)
+PA6_MASK_CLR = %10111111      ; Mask for Port A Pin 6 (clear)
 
 ; -----------------------------------------------------------------------------
 ;  DATA SEGMENT
@@ -77,13 +77,12 @@ Main:
     sta VIA_IER
 
     ; Configure Port A Direction
-    ; Bit 0 = 1 (Output) -> PA0 is LED
-    ; Bit 1-7 = 0 (Input)
-    lda #PA0_MASK_SET
+    ; PA6 is LED, all bits set to Input
+    lda #PA6_MASK_SET
     sta VIA_DDRA        
 
     ; Turn off LED
-    lda #PA0_MASK_CLR
+    lda #PA6_MASK_CLR
     sta VIA_ORA
 
     ; Configure Port B (Not used, set to all Inputs for safety)
@@ -149,11 +148,6 @@ Main:
 
 .if 0
 IdleLoop:
-
-.if 0
-    jsr Pseudo_IRQ
-.endif
-
     jmp IdleLoop        ; Infinite loop doing nothing
 .else
     jmp MONITOR_WARM
@@ -214,7 +208,7 @@ ExitISR:
 ; -----------------------------------------------------------------------------
 Toggle_LED:
     lda VIA_ORA         
-    eor #PA0_MASK_SET    ; XOR with %00000001 to flip Bit 0
+    eor #PA6_MASK_SET    ; XOR to flip Bit 6
     sta VIA_ORA
     rts
 
@@ -226,25 +220,6 @@ Delay:
 @delay:
     dex
     bne @delay
-    rts
-
-; -----------------------------------------------------------------------------
-; 
-; -----------------------------------------------------------------------------
-Pseudo_IRQ:
-    lda #255
-    sta delay_count
-@delay2:
-    jsr Delay
-    dec delay_count
-    bne @delay2
-
-    ldx #<msg_pseudo
-    ldy #>msg_pseudo
-    jsr print_msg
-
-;    lda #1     ; Generate IRQ
-    jsr USRENT ; Do it.
     rts
 
 ; -----------------------------------------------------------------------------
@@ -319,8 +294,6 @@ msg_ier:
         .byte "IER: ", 0
 msg_vector:
         .byte "Vector: ", 0 
-msg_pseudo:
-        .byte "Pseudo_IRQ", 13,10,0
 msg_ok:
         .byte "OK", 13, 10, 0
 msg_fail:
