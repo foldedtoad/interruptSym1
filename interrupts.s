@@ -133,22 +133,6 @@ ISR_Handler:
     and #IFR_CA1
     beq ExitISR         ; If not CA1, ignore (or jump to next handler)
 
-.if 1
-    ; Explicitly clear the CA1 Interrupt Flag by writing a '1' to its bit in IFR.
-    ; This guarantees the interrupt is acknowledged.
-    lda #IFR_CA1        ; Load mask %00000010
-    sta VIA_IFR         ; Writing 1 clears the bit
-.endif
-
-    lda VIA_ORA         ; Read ORA to clear the line
-
-.if 1
-    ; Re-Enable Negative Edge detection
-    lda VIA_PCR
-    and #%11111110      ; Clear PCR Bit 0 back to Negative Edge
-    sta VIA_PCR         ; CA1 is now fully reset and watching for the next High-to-Low edge.
-.endif
-
     ; Toggle LED
     jsr Toggle_LED
 
