@@ -32,7 +32,6 @@ MONITOR_WARM = $8003    ; Warm start entry point to return to monitor
 IRQ_VEC_LO   = $A678    ; User IRQ Vector Low Byte
 IRQ_VEC_HI   = $A679    ; User IRQ Vector High Byte
 
-
 ; VIA Base Address
 VIA_BASE     = $AC00
 
@@ -52,9 +51,6 @@ PA6_MASK_CLR = %10111111      ; Mask for Port A Pin 6 (clear)
 ;  DATA SEGMENT
 ; -----------------------------------------------------------------------------
 .segment "DATA"
-
-delay_count:
-    .byte 0
 
 ; -----------------------------------------------------------------------------
 ; CODE SEGMENT
@@ -99,14 +95,6 @@ Main:
 
     sta VIA_PCR
 
-.if 1
-    ldx #<msg_pcr
-    ldy #>msg_pcr
-    jsr print_msg
-    lda VIA_PCR
-    jsr OBCRLF 
-.endif
-
     ; 2. Setup Interrupt System
     ; -------------------------
     
@@ -115,9 +103,9 @@ Main:
 
     ; Point the SYM-1 User IRQ Vector to our ISR
     lda #<ISR_Handler
-    sta IRQ_VEC_LO
+    sta UIRQVC+0
     lda #>ISR_Handler
-    sta IRQ_VEC_HI
+    sta UIRQVC+1
 
     ; Enable Interrupts on VIA
     lda #(IER_ENABLE + IER_CA1_ENA)
@@ -126,40 +114,16 @@ Main:
     ; Enable CPU Interrupts
     cli
 
-    ; 3. Main Idle Loop
-    ; -----------------
-    ; The CPU is free to do other work here.   
-
-.if 1
-    ldx #<msg_vector
-    ldy #>msg_vector
-    jsr print_msg
-    lda IRQ_VEC_HI
-    jsr OUTBYT
-    lda IRQ_VEC_LO
-    jsr OBCRLF
-
-    ldx #<msg_ier
-    ldy #>msg_ier
-    jsr print_msg
-    lda VIA_IER
-    jsr OBCRLF
-.endif
-
-.if 0
-IdleLoop:
-    jmp IdleLoop        ; Infinite loop doing nothing
-.else
+    ; 3. The CPU is free to do other work here.
+    ; ----------------------------------------
+  
     jmp MONITOR_WARM
-.endif
 
 ; -----------------------------------------------------------------------------
 ; INTERRUPT SERVICE ROUTINE (ISR)
 ; -----------------------------------------------------------------------------
 ISR_Handler:
     ; Note: The SYM-1 Monitor ROM handler at $FFFE saves the registers
-    ; (A, X, Y) onto the stack before jumping here via ($A678).
-    ; Stack State: [PCH, PCL, P, A, X, Y] (Top)
 
     ; Clear Decimal Flag (Good practice in ISRs)
     cld                 
@@ -169,37 +133,26 @@ ISR_Handler:
     and #IFR_CA1
     beq ExitISR         ; If not CA1, ignore (or jump to next handler)
 
+.if 1
     ; Explicitly clear the CA1 Interrupt Flag by writing a '1' to its bit in IFR.
     ; This guarantees the interrupt is acknowledged.
     lda #IFR_CA1        ; Load mask %00000010
-    sta VIA_IFR         ; Writing 1 clears the bit   
-
-.if 0
-    ldx #<msg_ifr
-    ldy #>msg_ifr
-    jsr print_msg
-    lda VIA_IFR
-    jsr OBCRLF
-
-    ldx #<msg_ier
-    ldy #>msg_ier
-    jsr print_msg
-    lda VIA_IER
-    jsr OBCRLF
+    sta VIA_IFR         ; Writing 1 clears the bit
 .endif
 
-    ; Handle Data & Toggle LED
+    lda VIA_ORA         ; Read ORA to clear the line
+
+.if 1
+    ; Re-Enable Negative Edge detection
+    lda VIA_PCR
+    and #%11111110      ; Clear PCR Bit 0 back to Negative Edge
+    sta VIA_PCR         ; CA1 is now fully reset and watching for the next High-to-Low edge.
+.endif
+
+    ; Toggle LED
     jsr Toggle_LED
 
 ExitISR:
-    ; Restore registers saved by Monitor ROM
-    ; Order must be reverse of save: Pull Y, then X, then A.
-    pla 
-    tay
-    pla 
-    tax
-    pla
-
     ; Return from Interrupt
     rti
 
@@ -207,32 +160,10 @@ ExitISR:
 ; Toggle LED
 ; -----------------------------------------------------------------------------
 Toggle_LED:
-    lda VIA_ORA         
+    lda VIA_ORA
     eor #PA6_MASK_SET    ; XOR to flip Bit 6
     sta VIA_ORA
     rts
-
-; -----------------------------------------------------------------------------
-; 
-; -----------------------------------------------------------------------------
-Delay:
-    ldx #255
-@delay:
-    dex
-    bne @delay
-    rts
-
-; -----------------------------------------------------------------------------
-; 
-; -----------------------------------------------------------------------------
-Blink:
-    lda #255
-    sta delay_count
-@delay:
-    dec delay_count
-    bne @delay
-    jsr Toggle_LED
-    rts  
 
 ; -----------------------------------------------------------------------------
 ; 
@@ -251,6 +182,7 @@ Clear_Write_Protect:
 ; -----------------------------------------------------------------------------
 ; 
 ; -----------------------------------------------------------------------------
+.if 0
 Set_Write_Protect:
     pha 
     lda OR3A
@@ -261,6 +193,7 @@ Set_Write_Protect:
     sta DDR3A
     pla
     rts
+.endif
 
 ;-----------------------------------------------------------------------------
 ; print_msg - Print null-terminated string
@@ -286,17 +219,5 @@ print_msg:
 
 msg_banner:
         .byte "SYM-1 Interrupts Demo", 13, 10, 0
-msg_pcr:
-        .byte "PCR: ", 0
-msg_ifr:
-        .byte "IFR: ", 0
-msg_ier:
-        .byte "IER: ", 0
-msg_vector:
-        .byte "Vector: ", 0 
-msg_ok:
-        .byte "OK", 13, 10, 0
-msg_fail:
-        .byte "FAILED ", 0
 
 .end                    ; End of assembly
