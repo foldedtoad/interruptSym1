@@ -9,10 +9,8 @@
 ;
 ; Hardware Hookup:
 ;   VIA Base: $AC00
-;   Port A Pin 0 (PA0): Connect to LED (Active High).
+;   Port A Pin 6 (PA6): Connect to LED (Active High).
 ;   CA1 (Control):      Connect to Interrupt Source (Switch/Pulse).
-;                       (Note: PA1 cannot generate interrupts directly; 
-;                        signal must go to CA1).
 ; -----------------------------------------------------------------------------
 
 .p02                    ; Enable 6502 instructions
@@ -24,9 +22,6 @@
 ; -----------------------------------------------------------------------------
 ; MEMORY LAYOUT & CONSTANTS
 ; -----------------------------------------------------------------------------
-
-; SYM-1 Monitor Entry Points
-MONITOR_WARM = $8003    ; Warm start entry point to return to monitor
 
 ; SYM-1 Interrupt Vectors (RAM)
 IRQ_VEC_LO   = $A678    ; User IRQ Vector Low Byte
@@ -46,11 +41,6 @@ VIA_IER      = VIA_BASE + $0E ; Interrupt Enable Register
 
 PA6_MASK_SET = %01000000      ; Mask for Port A Pin 6 (set)
 PA6_MASK_CLR = %10111111      ; Mask for Port A Pin 6 (clear)
-
-; -----------------------------------------------------------------------------
-;  DATA SEGMENT
-; -----------------------------------------------------------------------------
-.segment "DATA"
 
 ; -----------------------------------------------------------------------------
 ; CODE SEGMENT
@@ -117,7 +107,7 @@ Main:
     ; 3. The CPU is free to do other work here.
     ; ----------------------------------------
   
-    jmp MONITOR_WARM
+    jmp WARM    ; SYM-1 Monitor Entry Point
 
 ; -----------------------------------------------------------------------------
 ; INTERRUPT SERVICE ROUTINE (ISR)
@@ -126,8 +116,8 @@ ISR_Handler:
     ; Note: The SYM-1 Monitor ROM handler at $FFFE saves the registers
 
     ; Clear Decimal Flag (Good practice in ISRs)
-    cld                 
-
+    cld  
+                  
     ; Check if this interrupt came from our VIA CA1
     lda VIA_IFR
     and #IFR_CA1
@@ -135,6 +125,11 @@ ISR_Handler:
 
     ; Toggle LED
     jsr Toggle_LED
+
+    jsr Debounce 
+
+    lda #IFR_CA1
+    sta VIA_IFR         ; Clear Interrupt Flag
 
 ExitISR:
     ; Return from Interrupt
@@ -147,6 +142,19 @@ Toggle_LED:
     lda VIA_ORA
     eor #PA6_MASK_SET    ; XOR to flip Bit 6
     sta VIA_ORA
+    rts
+
+; -----------------------------------------------------------------------------
+; Debounce -- introduce a short delay
+; -----------------------------------------------------------------------------
+Debounce:
+    ldy #$00
+    ldx #$20
+DebounceLoop:
+    dey
+    bne DebounceLoop
+    dex
+    bne DebounceLoop
     rts
 
 ; -----------------------------------------------------------------------------
