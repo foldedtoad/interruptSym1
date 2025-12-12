@@ -42,6 +42,9 @@ VIA_IER      = VIA_BASE + $0E ; Interrupt Enable Register
 PA6_MASK_SET = %01000000      ; Mask for Port A Pin 6 (set)
 PA6_MASK_CLR = %10111111      ; Mask for Port A Pin 6 (clear)
 
+PA7_MASK_SET = %10000000      ; Mask for Port A Pin 7 (set)
+PA7_MASK_CLR = %01111111      ; Mask for Port A Pin 7 (clear)
+
 ; -----------------------------------------------------------------------------
 ; CODE SEGMENT
 ; -----------------------------------------------------------------------------
@@ -55,41 +58,40 @@ Main:
     ldy #>msg_banner
     jsr print_msg
 
-    ; 1. Initialize the VIA
+    ; Initialize the VIA
     ; ---------------------
-    
+
     ; Disable VIA Interrupts initially to configure safely
     lda #IER_DISABLE
     sta VIA_IER
 
     ; Configure Port A Direction
-    ; PA6 is LED, all bits set to Input
+    ; PA7 is Button set to Input
+    ; PA6 is LED set to Output
+    ; PA5-PA0 are set to Input
+
     lda #PA6_MASK_SET
     sta VIA_DDRA        
 
     ; Turn off LED
-    lda #PA6_MASK_CLR
+    lda VIA_ORA 
+    and #PA6_MASK_CLR
     sta VIA_ORA
 
     ; Configure Port B (Not used, set to all Inputs for safety)
     lda #$00
     sta VIA_DDRB
 
-    ; Initialize Output State (Turn LED OFF initially)
-    lda #$00
-    sta VIA_ORA
-
     ; Configure Peripheral Control Register (PCR)  
     lda VIA_PCR
     ora #PCR_CA1_NAE   ; Negative Active Edge for CA1
+    sta VIA_PCR   
 
-    sta VIA_PCR
-
-    ; 2. Setup Interrupt System
+    ; Setup Interrupt System
     ; -------------------------
-    
+
     ; Disable write protection using monitor routine
-    jsr Clear_Write_Protect  
+    jsr Disable_Write_Protect  
 
     ; Point the SYM-1 User IRQ Vector to our ISR
     lda #<ISR_Handler
@@ -104,36 +106,46 @@ Main:
     ; Enable CPU Interrupts
     cli
 
-    ; 3. The CPU is free to do other work here.
+    ; The CPU is free to do other work here.
     ; ----------------------------------------
-  
+
     jmp WARM    ; SYM-1 Monitor Entry Point
 
 ; -----------------------------------------------------------------------------
 ; INTERRUPT SERVICE ROUTINE (ISR)
 ; -----------------------------------------------------------------------------
-ISR_Handler:
-    ; Note: The SYM-1 Monitor ROM handler at $FFFE saves the registers
+ISR_Handler: 
 
-    ; Clear Decimal Flag (Good practice in ISRs)
-    cld  
-                  
-    ; Check if this interrupt came from our VIA CA1
-    lda VIA_IFR
+    lda VIA_IFR         ; Check if this interrupt came from our VIA CA1
     and #IFR_CA1
-    beq ExitISR         ; If not CA1, ignore (or jump to next handler)
+    beq ExitISR         ; If not CA1, ignore
 
-    ; Toggle LED
-    jsr Toggle_LED
+    jsr Debounce
 
-    jsr Debounce 
+    lda VIA_ORA         ; If button release (PA7 high), else ignore (PA7 low)
+    and PA7_MASK_SET
+    beq ExitISR
 
     lda #IFR_CA1
     sta VIA_IFR         ; Clear Interrupt Flag
 
+    jsr Toggle_LED      ; Toggle LED
+
 ExitISR:
-    ; Return from Interrupt
-    rti
+    rti 
+
+; -----------------------------------------------------------------------------
+; Button Debounce Delay
+; -----------------------------------------------------------------------------
+Debounce:
+    ldy #$00
+    ldx #$80            ; Adjust this value for longer/shorter delay
+DebounceLoop:
+    dey
+    bne DebounceLoop
+    dex
+    bne DebounceLoop
+    rts
 
 ; -----------------------------------------------------------------------------
 ; Toggle LED
@@ -145,22 +157,9 @@ Toggle_LED:
     rts
 
 ; -----------------------------------------------------------------------------
-; Debounce -- introduce a short delay
-; -----------------------------------------------------------------------------
-Debounce:
-    ldy #$00
-    ldx #$20
-DebounceLoop:
-    dey
-    bne DebounceLoop
-    dex
-    bne DebounceLoop
-    rts
-
-; -----------------------------------------------------------------------------
 ; 
 ; -----------------------------------------------------------------------------
-Clear_Write_Protect:
+Disable_Write_Protect:
     pha 
     lda OR3A
     ora #$01       ; allow writing to SYSRAM
@@ -175,7 +174,7 @@ Clear_Write_Protect:
 ; 
 ; -----------------------------------------------------------------------------
 .if 0
-Set_Write_Protect:
+Enable_Write_Protect:
     pha 
     lda OR3A
     and #$FE       ; disable writing to SYSRAM
@@ -210,6 +209,6 @@ print_msg:
 .segment "RODATA"
 
 msg_banner:
-        .byte "SYM-1 Interrupts Demo", 13, 10, 0
+        .byte "SYM-1 Interrupts Demo", 13, 10, 0      
 
 .end                    ; End of assembly
