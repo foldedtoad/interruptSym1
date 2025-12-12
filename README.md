@@ -4,4 +4,8 @@
 
 Below is a photo an overview of the hardware setup for this demo.  
 
+
+<img src="images/simple_hw_setup.jpg" title="simple hw setup"> 
+
+
 <img src="images/SYM1_IRQ_demo.png" title="logic analyzer capture"> 
